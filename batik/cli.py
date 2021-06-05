@@ -3,7 +3,7 @@ batik
 
 Usage:
   batik serve [--backend <backend>]
-  batik invoke <endpoint> [payload]
+  batik invoke <endpoint>  [--json <file>] [<payload>]
   batik reload
   batik hello
 
