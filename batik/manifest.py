@@ -1,6 +1,7 @@
 import yaml
 #import ray
 import importlib
+import pydoc
 import re
 import sys
 
@@ -10,7 +11,8 @@ def actor_by_path(name):
 
     module_name, class_name = name.split(".")
 
-    sys.path.append('./')
+    if './' not in sys.path:
+        sys.path.append('./')
 
     somemodule = importlib.import_module(module_name)
 
@@ -25,6 +27,9 @@ def func_by_path(name, *args, **kwargs):
 
     module_name = '.'.join(ns[0:-1])
     func_name   = ns[-1]
+
+    if './' not in sys.path:
+        sys.path.append('./')
 
     somemodule = importlib.import_module(module_name)
 
@@ -43,7 +48,7 @@ def parse(mfst):
     state['actors'] = {}
     state['endpoints'] = {}
 
-    for actor in mfst['actors']:
+    for actor in mfst.get('actors') or []:
         name = actor["name"]
         class_path = actor["class"]
         args = actor.get("args")
@@ -78,7 +83,9 @@ def parse(mfst):
 
                 #fn = name.split('.')[-1]
 
-        state['endpoints'][endpoint['name']] = steps
+        state['endpoints'][endpoint['name']] = {}
+        state['endpoints'][endpoint['name']]["steps"] = steps
+        state['endpoints'][endpoint['name']]["input_type"] = endpoint.get("input_type") or 'str'
     
     return state
 
@@ -125,12 +132,21 @@ def parse_old(mfst):
 
     return state
 
-def endpoint_run(state, endpoint, *args, **kwargs):
-    print(state)
-    steps = state['endpoints'][endpoint]
+def endpoint_run(state, endpoint, payload):
+    steps = state['endpoints'][endpoint]['steps']
+    input_type = state['endpoints'][endpoint]['input_type']
+
+
+    payload = pydoc.locate(input_type)(payload)
+
+    res = payload
+
 
     for step in steps:
-        print("Step:", step)
+
+        res = step["fn"](res)
+
+    return res
 
 
 def endpoint_run_ray(state, endpoint, *args, **kwargs):
