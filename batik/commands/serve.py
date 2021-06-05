@@ -1,17 +1,13 @@
 from io import BytesIO
 import os 
 from flask import Flask, request, jsonify, make_response, abort, send_file
-from flask_socketio import SocketIO
-import socketio
 
 app = Flask(__name__)
-from flask_cors import CORS
 
 import sys
 
 from batik import manifest
 
-#state = manifest.parse_from_file()
 state = {}
 
 from .base import Base
@@ -31,6 +27,8 @@ def get_manifest():
 
 @app.route('/endpoint/<ep>', methods=['POST'])
 def run_exp(ep):
+
+    print(request.data)
 
     res = manifest.endpoint_run(state, ep, request.data)
 
