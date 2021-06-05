@@ -2,6 +2,7 @@ import yaml
 #import ray
 import importlib
 import pydoc
+import json
 import re
 import sys
 
@@ -136,8 +137,10 @@ def endpoint_run(state, endpoint, payload):
     steps = state['endpoints'][endpoint]['steps']
     input_type = state['endpoints'][endpoint]['input_type']
 
-
-    payload = pydoc.locate(input_type)(payload)
+    if input_type == "json":
+        payload = json.loads(payload)
+    else:
+        payload = pydoc.locate(input_type)(payload)
 
     res = payload
 
