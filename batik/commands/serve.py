@@ -23,17 +23,19 @@ from .base import Base
 def reload_manifest():
     global state
     state = manifest.parse_from_file()
+    return "ok", 200
 
 
 @app.route('/manifest', methods=['GET'])
 def get_manifest():
-    return jsonify(state)
+    return jsonify(state), 200
 
 
-@app.route('/endpoint/<ep>', methods=['GET'])
+@app.route('/endpoint/<ep>', methods=['POST'])
 def run_exp(ep):
 
-    res = manifest.endpoint_run(state, ep, request.args)
+    #res = manifest.endpoint_run(state, ep, request.args)
+    res = manifest.endpoint_run(state, ep, request.data)
 
     # HACK
     if type(res) is BytesIO:
