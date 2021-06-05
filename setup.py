@@ -59,12 +59,9 @@ setup(
     packages = find_packages(exclude=['docs', 'tests*']),
     install_requires = [
         'requests',
-        'qrcode',
+        'flask',
         'requests-toolbelt',
-        'clint',
         'pyyaml',
-        'gitignore-parser',
-        'pycryptodome',
     ],
     extras_require = {
         'test': ['coverage', 'pytest', 'pytest-cov'],
