@@ -1,0 +1,16 @@
+alias: linreg_example
+actors:
+  - name: Lin
+    class: model.LinearModel
+    args:
+      csv: winequality-red.csv
+    
+endpoints:
+  - name: train
+    steps:
+      - name: $Lin.train
+
+  - name: predict
+    input_type: json
+    steps:
+      - name: $Lin.predict
