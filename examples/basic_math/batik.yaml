@@ -1,0 +1,15 @@
+alias: basic_math
+endpoints:
+  - name: ten_two
+    input_type: int
+    steps:
+     - name: ops.times_ten
+
+     - name: ops.add_two
+
+  - name: two_ten
+    input_type: int
+    steps:
+     - name: ops.add_two
+
+     - name: ops.times_ten
