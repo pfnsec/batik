@@ -3,6 +3,8 @@ batik
 
 Usage:
   batik serve [--backend <backend>]
+  batik invoke <endpoint> [payload]
+  batik reload
   batik hello
 
 Options:
@@ -31,8 +33,6 @@ def main():
 
     # Here we'll try to dynamically match the command the user is trying to run
     # with a pre-defined command class we've already created.
-
-    print(batik.commands)
 
     for (k, v) in options.items(): 
         if hasattr(batik.commands, k) and v:
