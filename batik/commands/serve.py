@@ -9,12 +9,10 @@ from flask_cors import CORS
 
 import sys
 
-#import ray
-
 from batik import manifest
 
-#ray.init()
-state = manifest.parse_from_file()
+#state = manifest.parse_from_file()
+state = {}
 
 from .base import Base
 
@@ -34,7 +32,6 @@ def get_manifest():
 @app.route('/endpoint/<ep>', methods=['POST'])
 def run_exp(ep):
 
-    #res = manifest.endpoint_run(state, ep, request.args)
     res = manifest.endpoint_run(state, ep, request.data)
 
     # HACK
@@ -46,6 +43,11 @@ def run_exp(ep):
 
 class Serve(Base):
     """Serve models"""
+    def __init__(self, options, *args, **kwargs):
+        super().__init__(options, args, kwargs)
+        global state
+        state = manifest.parse_from_file()
+
 
     def run(self):
         app.run(host='0.0.0.0', port=5678)
