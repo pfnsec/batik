@@ -62,6 +62,7 @@ setup(
         'flask',
         'requests-toolbelt',
         'pyyaml',
+        'watchdog',
     ],
     extras_require = {
         'test': ['coverage', 'pytest', 'pytest-cov'],

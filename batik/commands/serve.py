@@ -2,6 +2,10 @@ from io import BytesIO
 import os 
 from flask import Flask, request, jsonify, make_response, abort, send_file
 
+from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+from watchdog.observers import Observer
+
+
 app = Flask(__name__)
 
 import sys
@@ -28,9 +32,8 @@ def get_manifest():
 @app.route('/endpoint/<ep>', methods=['POST'])
 def run_exp(ep):
 
-    print(request.data)
 
-    res = manifest.endpoint_run(state, ep, request.data)
+    res = manifest.endpoint_run(state, ep, request.json)
 
     # HACK
     if type(res) is BytesIO:
@@ -48,4 +51,32 @@ class Serve(Base):
 
 
     def run(self):
+        global state
+        if(self.options['--hot-reload']):
+            print("Starting hot-reload...")
+            self.start_reload()
         app.run(host='0.0.0.0', port=5678)
+    
+
+    def start_reload(self):
+        global state
+
+        observer = Observer()
+
+        class EventHandler(FileSystemEventHandler):
+            def on_modified(self, event: FileModifiedEvent):
+                if event.src_path.startswith('./__pycache__'):
+                    return
+
+                print("Reloading...")
+                global state
+                state = manifest.parse_from_file()
+
+
+                #if event.is_directory:
+                #    return
+                #if event.src_path == fileabspath:
+                #    this._reload()
+
+        observer.schedule(EventHandler(), "./", recursive=True)
+        observer.start()
