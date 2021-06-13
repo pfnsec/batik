@@ -2,8 +2,8 @@
 batik
 
 Usage:
-  batik serve [--backend <backend>]
-  batik invoke <endpoint>  [--json <file>] [<payload>]
+  batik serve [--backend <backend>] [--hot-reload]
+  batik invoke <endpoint> [(--json <file> | <payload>)]
   batik reload
   batik hello
 
