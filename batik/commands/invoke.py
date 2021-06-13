@@ -16,7 +16,7 @@ class Invoke(Base):
             r = requests.post(f"http://localhost:5678/endpoint/{endpoint}", json = payload)
 
         else:
-            payload = self.options.get("payload") or None
-            r = requests.post(f"http://localhost:5678/endpoint/{endpoint}", data = payload)
+            payload = self.options.get("<payload>") or None
+            r = requests.post(f"http://localhost:5678/endpoint/{endpoint}", json = payload)
 
         print(str(r.content))
