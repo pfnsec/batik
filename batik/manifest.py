@@ -7,7 +7,6 @@ import re
 import sys
 
 
-
 def actor_by_path(name):
 
     module_name, class_name = name.split(".")
@@ -15,7 +14,10 @@ def actor_by_path(name):
     if './' not in sys.path:
         sys.path.append('./')
 
-    somemodule = importlib.import_module(module_name)
+    if module_name in sys.modules:
+        somemodule = importlib.reload(sys.modules[module_name])
+    else:
+        somemodule = importlib.import_module(module_name)
 
     cl = getattr(somemodule, class_name)
 
@@ -32,7 +34,10 @@ def func_by_path(name, *args, **kwargs):
     if './' not in sys.path:
         sys.path.append('./')
 
-    somemodule = importlib.import_module(module_name)
+    if module_name in sys.modules:
+        somemodule = importlib.reload(sys.modules[module_name])
+    else:
+        somemodule = importlib.import_module(module_name)
 
     fn = getattr(somemodule, func_name)
 
@@ -91,47 +96,6 @@ def parse(mfst):
     return state
 
 
-def parse_old(mfst):
-
-    state = {}
-    state['actors'] = {}
-    state['endpoints'] = {}
-
-    for endpoint in mfst['endpoints']:
-        steps = []
-
-        for step in endpoint['steps']:
-            #print(step)
-            name = step['name']
-
-            if ':' in name:
-                inst = step.get('inst') or 'default'
-
-                path, fn = name.split(':')
-
-                inst_path = f'{path}_{inst}'
-
-                actor = state['actors'].get(inst_path)
-                if not actor:
-                    actor = actor_by_path(path)(layer_args=step)
-                    state['actors'][inst_path] = actor
-                
-                # Don't insert these args for now... we init with them, after all.
-                #steps.append((getattr(actor, fn).remote, step))
-                steps.append((getattr(actor, fn).remote, {}))
-
-            else:
-                # Match python function path
-
-                fn = func_by_path(name)
-                steps.append((fn, step))
-
-
-                #fn = name.split('.')[-1]
-
-        state['endpoints'][endpoint['name']] = steps
-
-    return state
 
 def endpoint_run(state, endpoint, payload):
     steps = state['endpoints'][endpoint]['steps']
@@ -140,13 +104,15 @@ def endpoint_run(state, endpoint, payload):
     if input_type == "json":
         payload = json.loads(payload)
     else:
+        # Cast from a 'POST' body to the type specified in the 
+        # manifest.
         payload = pydoc.locate(input_type)(payload)
 
     res = payload
 
-
     for step in steps:
-
+        # TODO: if "group" in step...
+        # TODO: insert expanded layer kwargs from 'step'
         res = step["fn"](res)
 
     return res
