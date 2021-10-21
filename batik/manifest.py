@@ -53,6 +53,7 @@ def parse(mfst):
     state = {}
     state['actors'] = {}
     state['endpoints'] = {}
+    state['daemons'] = []
 
     for actor in mfst.get('actors') or []:
         name = actor["name"]
@@ -62,13 +63,13 @@ def parse(mfst):
         state['actors'][name] = actor_by_path(class_path)(layer_args=args)
 
 
-    for endpoint in mfst['endpoints']:
+    for endpoint in mfst.get('endpoints') or []:
         steps = []
 
         for step in endpoint['steps']:
             name = step['name']
 
-            # $Inst.method
+            # $Inst.method , for example
             if name[0] == "$":
                 class_path, fn = name[1:].split('.')
                 actor = state["actors"][class_path]
@@ -92,21 +93,61 @@ def parse(mfst):
         state['endpoints'][endpoint['name']] = {}
         state['endpoints'][endpoint['name']]["steps"] = steps
         state['endpoints'][endpoint['name']]["input_type"] = endpoint.get("input_type") or 'str'
+
+    for daemon in mfst.get('daemons') or []:
+        name = daemon["name"]
+        args = daemon.get("args")
+        endpoint = daemon["endpoint"]
+
+        # $Inst.method , for example
+        if name[0] == "$":
+            class_path, fn = name[1:].split('.')
+            actor = state["actors"][class_path]
+
+            step = {
+                "actor": actor,
+                "fn": getattr(actor, fn),
+                "args": args
+            }
+
+        else:
+            # Match python function path
+
+            fn = func_by_path(name)
+            step = {
+                "fn": fn, 
+                "args": args
+            }
+
+        state["daemons"].append({
+            "name": name,
+            "endpoint": endpoint,
+            "fn": step["fn"],
+            "args": step["args"],
+        })
+
     
     return state
 
+
+def daemon_thread(state, daemon):
+    endpoint = daemon['endpoint']
+    for res in daemon['fn']():
+        endpoint_run(state, endpoint, res)
 
 
 def endpoint_run(state, endpoint, payload):
     steps = state['endpoints'][endpoint]['steps']
     input_type = state['endpoints'][endpoint]['input_type']
 
-    if input_type == "json":
-        payload = json.loads(payload)
-    else:
-        # Cast from a 'POST' body to the type specified in the 
-        # manifest.
-        payload = pydoc.locate(input_type)(payload)
+    # do this cast in serve()!
+
+#   if input_type == "json":
+#       payload = json.loads(payload)
+#   else:
+#       # Cast from a 'POST' body to the type specified in the 
+#       # manifest.
+#       payload = pydoc.locate(input_type)(payload)
 
     res = payload
 

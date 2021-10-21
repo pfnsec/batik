@@ -1,9 +1,10 @@
 from io import BytesIO
-import os 
+import os.path
 from flask import Flask, request, jsonify, make_response, abort, send_file
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from watchdog.observers import Observer
+from threading import Thread
 
 
 app = Flask(__name__)
@@ -52,6 +53,13 @@ class Serve(Base):
 
     def run(self):
         global state
+        print(state['daemons'])
+
+        for daemon in state['daemons']:
+            daemon_worker = Thread(target=manifest.daemon_thread, args=(state, daemon))
+            daemon_worker.setDaemon(True)
+            daemon_worker.start()
+
         if(self.options['--hot-reload']):
             print("Starting hot-reload...")
             self.start_reload()
@@ -66,6 +74,10 @@ class Serve(Base):
         class EventHandler(FileSystemEventHandler):
             def on_modified(self, event: FileModifiedEvent):
                 if event.src_path.startswith('./__pycache__'):
+                    return
+
+                f, e = os.path.splitext(event.src_path)
+                if e not in [".py", ".yaml"]:
                     return
 
                 print("Reloading...")
