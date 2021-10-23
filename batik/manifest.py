@@ -1,14 +1,18 @@
+from typing import Any
 import yaml
 #import ray
 import importlib
+import inspect
+
 import pydoc
 import json
 import re
 import sys
+from threading import Thread
 
 
 def actor_by_path(name):
-
+    print(f"Actor by path {name}")
     module_name, class_name = name.split(".")
 
     if './' not in sys.path:
@@ -25,7 +29,6 @@ def actor_by_path(name):
 
 
 def func_by_path(name, *args, **kwargs):
-
     ns = name.split(".")
 
     module_name = '.'.join(ns[0:-1])
@@ -43,6 +46,7 @@ def func_by_path(name, *args, **kwargs):
 
     return fn
 
+
 def parse_from_file():
     with open("./batik.yaml") as manifest:
         mfst = yaml.load(manifest, Loader=yaml.FullLoader)
@@ -50,138 +54,166 @@ def parse_from_file():
 
 def parse(mfst):
 
-    state = {}
-    state['actors'] = {}
-    state['endpoints'] = {}
-    state['daemons'] = []
+    manifest = Manifest()
+
 
     for actor in mfst.get('actors') or []:
-        name = actor["name"]
+        name       = actor["name"]
         class_path = actor["class"]
-        args = actor.get("args")
+        args       = actor.get("args")
 
-        state['actors'][name] = actor_by_path(class_path)(layer_args=args)
+        manifest.add_actor(Actor(class_path, args), name)
 
 
     for endpoint in mfst.get('endpoints') or []:
-        steps = []
+        name = endpoint['name']
+        input_type = endpoint.get("input_type") or 'str'
+
+        ep = Endpoint(input_type)
 
         for step in endpoint['steps']:
-            name = step['name']
+            path = step['name']
+            args = step.get('args')
+            layer = Layer(manifest, path, args)
+            ep.add_layer(layer)
 
-            # $Inst.method , for example
-            if name[0] == "$":
-                class_path, fn = name[1:].split('.')
-                actor = state["actors"][class_path]
-                #steps.append((getattr(actor, fn).remote, step))
-                steps.append({
-                    "actor": actor,
-                    "fn": getattr(actor, fn),
-                    "args": step
-                    })
-            else:
-                # Match python function path
+        manifest.add_endpoint(ep, name)
 
-                fn = func_by_path(name)
-                steps.append({
-                    "fn": fn, 
-                    "args": step})
-
-
-                #fn = name.split('.')[-1]
-
-        state['endpoints'][endpoint['name']] = {}
-        state['endpoints'][endpoint['name']]["steps"] = steps
-        state['endpoints'][endpoint['name']]["input_type"] = endpoint.get("input_type") or 'str'
 
     for daemon in mfst.get('daemons') or []:
-        name = daemon["name"]
+        generator = daemon["generator"]
         args = daemon.get("args")
-        endpoint = daemon["endpoint"]
+        endpoint = daemon.get("endpoint")
+        steps = daemon.get("steps")
 
-        # $Inst.method , for example
-        if name[0] == "$":
-            class_path, fn = name[1:].split('.')
-            actor = state["actors"][class_path]
+        dm = Daemon(manifest, generator, args, endpoint, steps)
 
-            step = {
-                "actor": actor,
-                "fn": getattr(actor, fn),
-                "args": args
-            }
-
-        else:
-            # Match python function path
-
-            fn = func_by_path(name)
-            step = {
-                "fn": fn, 
-                "args": args
-            }
-
-        state["daemons"].append({
-            "name": name,
-            "endpoint": endpoint,
-            "fn": step["fn"],
-            "args": step["args"],
-        })
+        manifest.add_daemon(dm)
 
     
-    return state
+    return manifest
 
 
-def daemon_thread(state, daemon):
-    endpoint = daemon['endpoint']
-    for res in daemon['fn']():
-        endpoint_run(state, endpoint, res)
+class Endpoint:
+    def __init__(self, input_type):
+        self.layers = []
+        self.input_type = input_type
+    
+    def add_layer(self, layer):
+        self.layers.append(layer)
 
 
-def endpoint_run(state, endpoint, payload):
-    steps = state['endpoints'][endpoint]['steps']
-    input_type = state['endpoints'][endpoint]['input_type']
+class Layer:
+    def __init__(self, manifest, path, args):
+        self.pass_manifest = False
+        self.actor = None
+        self.args = args 
 
-    # do this cast in serve()!
+        if path[0] == "$":
+            # match $Inst.method , for example
+            actor, fn = path[1:].split('.')
+            self.actor = manifest.get_actor(actor).cl
+            self.fn = getattr(self.actor, fn)
+        else:
+            # Match python function path
+            self.fn = func_by_path(path)
 
-#   if input_type == "json":
-#       payload = json.loads(payload)
-#   else:
-#       # Cast from a 'POST' body to the type specified in the 
-#       # manifest.
-#       payload = pydoc.locate(input_type)(payload)
-
-    res = payload
-
-    for step in steps:
-        # TODO: if "group" in step...
-        # TODO: insert expanded layer kwargs from 'step'
-        res = step["fn"](res)
-
-    return res
+        sig = inspect.signature(self.fn)
+        if 'batik_manifest' in sig.parameters:
+            self.pass_manifest = True
 
 
-def endpoint_run_ray(state, endpoint, *args, **kwargs):
-    steps = state['endpoints'][endpoint]
-
-    fn, kw = steps[0]
-    kw.pop("name", None)
-    res = fn(*args, **kwargs, **kw)
-
-    for step in steps[1:]:
-        fn, kw = step
-        kw.pop("name", None)
-        res = fn(res, **kw)
-
-    return ray.get(res)
+class Actor:
+    # Actor's layer_args are contained within the underlying actor class
+    def __init__(self, class_path, args):
+        self.cl = actor_by_path(class_path)(layer_args=args)
 
 
-#state = parse_from_file()
+class Daemon:
+    def __init__(self, manifest, path, args, endpoint, layers):
+        self.pass_manifest = False
+        self.actor = None
+        self.args = args            
+        self.endpoint = endpoint
+        self.layers = layers
+
+        if path[0] == "$":
+            # match $Inst.method , for example
+            actor, fn = path[1:].split('.')
+            self.actor = manifest.get_actor(actor).cl
+            self.fn = getattr(self.actor, fn)
+        else:
+            # Match python function path
+            self.fn = func_by_path(path)
+
 
 class Manifest:
     def __init__(self):
-        self.state = state
+        self.actors = {}
+        self.endpoints = {}
+        self.daemons = []
     
     def reconfigure(self, config):
         self.endpoint = config['endpoint']
+    
+    def add_daemon(self, daemon: Daemon):
+        self.daemons.append(daemon)
 
-    def __call__(self, request):
-        return endpoint_run(self.state, self.endpoint, request)
+    def add_actor(self, actor: Actor, name: str):
+        self.actors[name] = actor
+    
+    def get_actor(self, name: str):
+        return self.actors[name]
+
+    def add_endpoint(self, endpoint: Endpoint, name: str):
+        self.endpoints[name] = endpoint
+    
+
+    def daemon_thread(self, daemon):
+        layers = daemon.layers or []
+        endpoint = daemon.endpoint
+        # For every value produced by the generator fn()...
+        for res in daemon.fn():
+            # Run it through its layers...
+            res = self.run_layer_set(layers, res)
+            # ... and pass the result to its endpoint, if it exists
+            if endpoint is not None:
+                self.run_endpoint(endpoint, res)
+
+
+    def spawn_daemons(self):
+        for daemon in self.daemons:
+            daemon_worker = Thread(target=self.daemon_thread, args=(daemon,))
+            daemon_worker.setDaemon(True)
+            daemon_worker.start()
+    
+
+    # Cast from a 'POST' body to the type specified in the manifest.
+    def cast_endpoint_payload(self, name: str, payload: Any):
+        input_type = self.endpoints[name].input_type
+
+        if input_type == "json":
+            payload = json.loads(payload)
+        else:
+            payload = pydoc.locate(input_type)(payload)
+
+        return payload
+
+
+    def run_layer_set(self, layers, payload: Any):
+        res = payload
+        for layer in layers:
+            if layer.pass_manifest:
+                res = layer.fn(res, batik_manifest=self)
+            else:
+                res = layer.fn(res)
+        return res
+
+    
+    def run_endpoint(self, name: str, payload: Any):
+
+        ep = self.endpoints[name]
+
+        res = self.run_layer_set(ep.layers, payload)
+
+        return res

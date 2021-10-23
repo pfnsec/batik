@@ -1,10 +1,10 @@
 from io import BytesIO
 import os.path
 from flask import Flask, request, jsonify, make_response, abort, send_file
+from flask_socketio import SocketIO
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from watchdog.observers import Observer
-from threading import Thread
 
 
 app = Flask(__name__)
@@ -13,28 +13,30 @@ import sys
 
 from batik import manifest
 
-state = {}
 
 from .base import Base
 
+manifest_instance = None
 
 @app.route('/reload_manifest', methods=['POST'])
 def reload_manifest():
-    global state
-    state = manifest.parse_from_file()
+    global manifest_instance
+    manifest_instance = manifest.parse_from_file()
     return "ok", 200
 
 
 @app.route('/manifest', methods=['GET'])
 def get_manifest():
-    return jsonify(state), 200
+    return jsonify(manifest_instance), 200
 
 
 @app.route('/endpoint/<ep>', methods=['POST'])
 def run_exp(ep):
 
+    payload = request.json
+    payload = manifest_instance.cast_endpoint_payload(ep, payload)
 
-    res = manifest.endpoint_run(state, ep, request.json)
+    res = manifest_instance.run_endpoint(ep, payload)
 
     # HACK
     if type(res) is BytesIO:
@@ -46,24 +48,24 @@ def run_exp(ep):
 class Serve(Base):
     """Serve models"""
     def __init__(self, options, *args, **kwargs):
+        global manifest_instance
         super().__init__(options, args, kwargs)
-        global state
-        state = manifest.parse_from_file()
+        manifest_instance = manifest.parse_from_file()
 
 
     def run(self):
-        global state
-        print(state['daemons'])
 
-        for daemon in state['daemons']:
-            daemon_worker = Thread(target=manifest.daemon_thread, args=(state, daemon))
-            daemon_worker.setDaemon(True)
-            daemon_worker.start()
 
         if(self.options['--hot-reload']):
             print("Starting hot-reload...")
             self.start_reload()
+
+        manifest_instance.spawn_daemons()
+
+        #socketio = SocketIO(app)
+
         app.run(host='0.0.0.0', port=5678)
+        #socketio.run(app, host='0.0.0.0', port=5678)
     
 
     def start_reload(self):
@@ -81,14 +83,8 @@ class Serve(Base):
                     return
 
                 print("Reloading...")
-                global state
-                state = manifest.parse_from_file()
-
-
-                #if event.is_directory:
-                #    return
-                #if event.src_path == fileabspath:
-                #    this._reload()
+                global manifest_instance
+                manifest_instance = manifest.parse_from_file()
 
         observer.schedule(EventHandler(), "./", recursive=True)
         observer.start()
