@@ -44,17 +44,26 @@ def run_exp(ep):
     else:
         return jsonify(res), 200
 
+class FlaskManifest(manifest.Manifest):
+    def __init__(self, socketio):
+        super().__init__()
+        self.socketio = socketio
+
+    def broadcast(self, topic, data):
+        self.socketio.emit(topic, data, broadcast=True)
+
 
 class Serve(Base):
     """Serve models"""
     def __init__(self, options, *args, **kwargs):
         global manifest_instance
         super().__init__(options, args, kwargs)
-        manifest_instance = manifest.parse_from_file()
+        self.socketio = SocketIO(app, cors_allowed_origins='*')
+        manifest_instance = FlaskManifest(self.socketio)
+        manifest_instance.parse_file()
 
 
     def run(self):
-
 
         if(self.options['--hot-reload']):
             print("Starting hot-reload...")
@@ -62,14 +71,10 @@ class Serve(Base):
 
         manifest_instance.spawn_daemons()
 
-        #socketio = SocketIO(app)
-
-        app.run(host='0.0.0.0', port=5678)
-        #socketio.run(app, host='0.0.0.0', port=5678)
+        self.socketio.run(app, host='0.0.0.0', port=5678)
     
 
     def start_reload(self):
-        global state
 
         observer = Observer()
 
@@ -82,9 +87,8 @@ class Serve(Base):
                 if e not in [".py", ".yaml"]:
                     return
 
-                print("Reloading...")
+                print("Reloading... (not implemented...)")
                 global manifest_instance
-                manifest_instance = manifest.parse_from_file()
 
         observer.schedule(EventHandler(), "./", recursive=True)
         observer.start()

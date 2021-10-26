@@ -47,10 +47,6 @@ def func_by_path(name, *args, **kwargs):
     return fn
 
 
-def parse_from_file():
-    with open("./batik.yaml") as manifest:
-        mfst = yaml.load(manifest, Loader=yaml.FullLoader)
-        return parse(mfst)
 
 def parse(mfst):
 
@@ -130,12 +126,12 @@ class Actor:
 
 
 class Daemon:
-    def __init__(self, manifest, path, args, endpoint, layers):
+    def __init__(self, manifest, path, args, endpoint, steps):
         self.pass_manifest = False
         self.actor = None
         self.args = args            
         self.endpoint = endpoint
-        self.layers = layers
+        self.layers = []
 
         if path[0] == "$":
             # match $Inst.method , for example
@@ -146,6 +142,12 @@ class Daemon:
             # Match python function path
             self.fn = func_by_path(path)
 
+        for step in steps:
+            path = step['name']
+            args = step.get('args')
+            layer = Layer(manifest, path, args)
+            self.layers.append(layer)
+
 
 class Manifest:
     def __init__(self):
@@ -153,8 +155,46 @@ class Manifest:
         self.endpoints = {}
         self.daemons = []
     
-    def reconfigure(self, config):
-        self.endpoint = config['endpoint']
+    def parse_file(self):
+        with open("./batik.yaml") as manifest:
+            mfst = yaml.load(manifest, Loader=yaml.FullLoader)
+            return self.parse(mfst)
+
+    def parse(self, mfst):
+
+        for actor in mfst.get('actors') or []:
+            name       = actor["name"]
+            class_path = actor["class"]
+            args       = actor.get("args")
+
+            self.add_actor(Actor(class_path, args), name)
+
+
+        for endpoint in mfst.get('endpoints') or []:
+            name = endpoint['name']
+            input_type = endpoint.get("input_type") or 'str'
+
+            ep = Endpoint(input_type)
+
+            for step in endpoint['steps']:
+                path = step['name']
+                args = step.get('args')
+                layer = Layer(self, path, args)
+                ep.add_layer(layer)
+
+            self.add_endpoint(ep, name)
+
+
+        for daemon in mfst.get('daemons') or []:
+            generator = daemon["generator"]
+            args = daemon.get("args")
+            endpoint = daemon.get("endpoint")
+            steps = daemon.get("steps")
+
+            dm = Daemon(self, generator, args, endpoint, steps)
+
+            self.add_daemon(dm)
+
     
     def add_daemon(self, daemon: Daemon):
         self.daemons.append(daemon)
@@ -217,3 +257,6 @@ class Manifest:
         res = self.run_layer_set(ep.layers, payload)
 
         return res
+    
+    def broadcast(self, topic, data):
+        print("Broadcast not implemented for current backend...")
