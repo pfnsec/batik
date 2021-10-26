@@ -6,6 +6,7 @@ __pycache__/
 batik.env.yaml
 .batik.download/
 .batik.build/
+*.swp
 
 # C extensions
 *.so
