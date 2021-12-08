@@ -151,6 +151,7 @@ class Daemon:
 
 class Manifest:
     def __init__(self):
+        self.alias = ""
         self.actors = {}
         self.endpoints = {}
         self.daemons = []
@@ -158,6 +159,7 @@ class Manifest:
     def parse_file(self):
         with open("./batik.yaml") as manifest:
             mfst = yaml.load(manifest, Loader=yaml.FullLoader)
+            self.alias = mfst['alias']
             return self.parse(mfst)
 
     def parse(self, mfst):
