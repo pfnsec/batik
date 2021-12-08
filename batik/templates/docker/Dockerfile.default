@@ -1,0 +1,5 @@
+FROM batik/batik as base
+
+WORKDIR /custom_app
+COPY . /custom_app
+ENTRYPOINT [ "batik", "serve" ]
