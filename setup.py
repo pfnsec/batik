@@ -64,8 +64,10 @@ setup(
         'flask_socketio',
         'requests-toolbelt',
         'pyyaml',
-        'docopt',
         'watchdog',
+        'docopt==0.6.2',
+        'docker==5.0.3',
+        'kubernetes==20.13.0',
     ],
     extras_require = {
         'test': ['coverage', 'pytest', 'pytest-cov'],
