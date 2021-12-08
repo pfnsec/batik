@@ -3,15 +3,15 @@ from os.path import expanduser
 
 import yaml
 
-batik_env = {}
-env = batik_env.get
+env = {}
+env_path = ""
 
 def set_env_file(file):
-    global batik_env
+    global env
 
     with open(file, 'r') as stream:
         try:
-            batik_env = yaml.safe_load(stream)
+            env = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
             print(exc)
 
@@ -19,6 +19,8 @@ global_env = os.path.join(expanduser("~"), "batik.env.yaml")
 
 # TODO eventually check other paths?
 if(os.path.exists("./batik.env.yaml")):
-    set_env_file("./batik.env.yaml")
+    env_path = "./batik.env.yaml"
 elif(os.path.exists(global_env)):
-    set_env_file(global_env)
+    env_path = global_env
+
+set_env_file(env_path)
