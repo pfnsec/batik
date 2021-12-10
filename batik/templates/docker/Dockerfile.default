@@ -1,5 +1,16 @@
-FROM batik/batik as base
+FROM batik/batik as builder
 
 WORKDIR /custom_app
 COPY . /custom_app
-ENTRYPOINT [ "batik", "serve" ]
+
+RUN {{ install_hook }}
+
+FROM python:3.9-slim-bullseye as base
+
+COPY --from=builder /batik_env /batik_env
+ENV PATH="/batik_env/bin:$PATH"
+
+WORKDIR /custom_app
+COPY . /custom_app
+
+CMD [ "batik", "serve" ]
