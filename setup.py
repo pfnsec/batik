@@ -7,8 +7,6 @@ from subprocess import call
 
 from setuptools import Command, find_packages, setup
 
-from batik import __version__
-
 
 this_dir = abspath(dirname(__file__))
 with open(join(this_dir, 'README.md'), encoding='utf-8') as file:
@@ -34,7 +32,7 @@ class RunTests(Command):
 
 setup(
     name = 'batik',
-    version = __version__,
+    version = "0.3.0",
     description = 'batik',
     long_description = long_description,
     url = 'https://github.com/pfnsec/batik',
@@ -48,13 +46,10 @@ setup(
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.2',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
     keywords = 'cli',
     packages = find_packages(exclude=['docs', 'tests*']),
@@ -62,12 +57,12 @@ setup(
         'requests',
         'flask',
         'flask_socketio',
-        'requests-toolbelt',
         'pyyaml',
         'watchdog',
-        'docopt==0.6.2',
-        'docker==5.0.3',
-        'kubernetes==20.13.0',
+        'docopt',
+        "jinja2",
+        'docker',
+        'kubernetes',
     ],
     extras_require = {
         'test': ['coverage', 'pytest', 'pytest-cov'],
