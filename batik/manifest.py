@@ -47,49 +47,6 @@ def func_by_path(name, *args, **kwargs):
     return fn
 
 
-
-def parse(mfst):
-
-    manifest = Manifest()
-
-
-    for actor in mfst.get('actors') or []:
-        name       = actor["name"]
-        class_path = actor["class"]
-        args       = actor.get("args")
-
-        manifest.add_actor(Actor(class_path, args), name)
-
-
-    for endpoint in mfst.get('endpoints') or []:
-        name = endpoint['name']
-        input_type = endpoint.get("input_type") or 'str'
-
-        ep = Endpoint(input_type)
-
-        for step in endpoint['steps']:
-            path = step['name']
-            args = step.get('args')
-            layer = Layer(manifest, path, args)
-            ep.add_layer(layer)
-
-        manifest.add_endpoint(ep, name)
-
-
-    for daemon in mfst.get('daemons') or []:
-        generator = daemon["generator"]
-        args = daemon.get("args")
-        endpoint = daemon.get("endpoint")
-        steps = daemon.get("steps")
-
-        dm = Daemon(manifest, generator, args, endpoint, steps)
-
-        manifest.add_daemon(dm)
-
-    
-    return manifest
-
-
 class Endpoint:
     def __init__(self, input_type):
         self.layers = []
