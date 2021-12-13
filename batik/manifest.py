@@ -99,11 +99,12 @@ class Daemon:
             # Match python function path
             self.fn = func_by_path(path)
 
-        for step in steps:
-            path = step['name']
-            args = step.get('args')
-            layer = Layer(manifest, path, args)
-            self.layers.append(layer)
+        if steps is not None:
+            for step in steps:
+                path = step['name']
+                args = step.get('args')
+                layer = Layer(manifest, path, args)
+                self.layers.append(layer)
 
 
 class Manifest:
@@ -171,8 +172,9 @@ class Manifest:
     def daemon_thread(self, daemon):
         layers = daemon.layers or []
         endpoint = daemon.endpoint
+        args = daemon.args
         # For every value produced by the generator fn()...
-        for res in daemon.fn():
+        for res in daemon.fn(**args):
             # Run it through its layers...
             res = self.run_layer_set(layers, res)
             # ... and pass the result to its endpoint, if it exists
