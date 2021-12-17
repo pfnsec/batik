@@ -4,9 +4,10 @@ batik
 Usage:
   batik serve [--backend <backend>] [--hot-reload]
   batik invoke <endpoint> [(--json <file> | <payload>)]
+  batik run <endpoint> [(--json <file> | <payload>)] [--trace]
   batik reload
   batik build [--push]
-  batik hello
+  batik validate
 
 Options:
   -h --help                         Show this screen.
@@ -17,19 +18,30 @@ Examples:
 
 Help:
   For help using this tool, please open an issue on the Github repository:
-  https://github.com/batik-informat/batik
+  https://github.com/pfnsec/batik
 """
 
 
+import sys
+import asyncio
+import inspect
 from inspect import getmembers, isclass
 
 from docopt import docopt
 
 from . import __version__ as VERSION
+import batik.commands
 
 def main():
-    """Main CLI entrypoint."""
-    import batik.commands
+    if sys.platform == 'win32':
+        #loop = asyncio.ProactorEventLoop()
+        #asyncio.set_event_loop(loop)
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(co_main())
+    loop.close()
+
+async def co_main():
     options = docopt(__doc__, version=VERSION)
 
     # Here we'll try to dynamically match the command the user is trying to run
@@ -45,4 +57,7 @@ def main():
             # What a hack! Oh well
             command = [command[1] for command in classes if str(command[0]).lower() == k][0]
             command = command(options)
-            command.run()
+            if inspect.iscoroutinefunction(command.run):
+                await command.run()
+            else:
+                command.run()
