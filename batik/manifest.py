@@ -213,7 +213,7 @@ class Manifest:
             name = endpoint['name']
             input_type = endpoint.get("input_type") or 'str'
 
-            ep = Endpoint()
+            ep = Endpoint(name)
 
             for step in endpoint['steps']:
                 path  = step['name']
