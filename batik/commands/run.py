@@ -6,21 +6,26 @@ from batik import manifest
 class Run(Base):
     """Load Manifest, run an endpoint, and quit"""
 
-    def run(self):
+    async def run(self):
         mfst = manifest.Manifest()
         mfst.parse_file()
 
         endpoint = self.options["<endpoint>"]
 
         use_trace = self.options.get("--trace") or None
+        if use_trace:
+            trace = mfst.create_trace()
+        else:
+            trace = None
+
         use_json = self.options.get("--json") or None
         if use_json:
             with open(self.options["<file>"]) as json_file:
                 payload = json.load(json_file)
-                res = mfst.run_endpoint(endpoint, payload)
+                res = await mfst.run_endpoint(endpoint, payload, trace=trace)
 
         else:
             payload = self.options.get("<payload>") or None
-            res = mfst.run_endpoint(endpoint, payload, cast=True)
+            res = await mfst.run_endpoint(endpoint, payload, cast=True, trace=trace)
 
         print(str(res))
