@@ -1,0 +1,10 @@
+alias: basic_daemon
+daemons:
+  - name: tick
+    args:
+      period: 2
+    generator: ops.tick
+    steps:
+      - name: ops.log
+        args:
+          source: tick
