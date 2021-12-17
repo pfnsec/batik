@@ -1,8 +1,10 @@
 from typing import Any
 import yaml
-#import ray
+import secrets
 import importlib
 import inspect
+import asyncio
+import datetime
 
 import pydoc
 import json
@@ -47,9 +49,15 @@ def func_by_path(name, *args, **kwargs):
     return fn
 
 
+async def run_or_await(fn, *args, **kwargs):
+    if inspect.iscoroutinefunction(fn):
+        return await fn(*args, **kwargs)
+    else:
+        return fn(*args, **kwargs)
 
 class Layer:
     def __init__(self, manifest, path, args):
+        self.path = path
         self.manifest = manifest
         self.pass_manifest = False
         self.actor = None
@@ -68,11 +76,16 @@ class Layer:
         if 'batik_manifest' in sig.parameters:
             self.pass_manifest = True
 
-    def run(self, x):
+    async def run(self, x, trace=None):
+        args = self.args or {}
+        # TODO: Pass the trace in here too!
         if self.pass_manifest:
-            return self.fn(x, batik_manifest=self.manifest)
+            res = await run_or_await(self.fn, x, **args, batik_manifest=self.manifest)
         else:
-            return self.fn(x)
+            res = await run_or_await(self.fn, x, **args)
+        if trace:
+            trace.trace(f'layer/{self.path}', res)
+        return res
 
 
 class Actor:
@@ -85,7 +98,8 @@ class Actor:
 
 
 class Endpoint:
-    def __init__(self):
+    def __init__(self, name):
+        self.name = name
         self.layers = []
     
     def add_layer(self, layer: Layer):
@@ -103,10 +117,12 @@ class Endpoint:
         else:
             return annotation(x)
 
-    def run(self, x):
+    async def run(self, x, trace=None):
+        if trace:
+            trace.trace(f'endpoint/{self.name}', x)
         y = x
         for layer in self.layers:
-            y = layer.run(y)
+            y = await layer.run(y, trace=trace)
         return y
 
 class Daemon:
@@ -135,26 +151,39 @@ class Daemon:
                 layer = Layer(manifest, path, args)
                 self.layers.append(layer)
 
-    def run(self):
+    async def run(self, trace=False):
         # For every value produced by the generator fn()...
-        for res in self.fn(**self.args):
-            trace = Trace(f'daemon/{self.name}')
+        args = self.args or {}
+        async for res in await run_or_await(self.fn, **args):
+            if(trace):
+                trace = self.manifest.create_trace()
+                trace.trace(f"daemon/{self.name}", res)
+            else: 
+                trace = None
             # Run it through its layers...
             for layer in self.layers:
-                res = layer.run(res)
+                res = await layer.run(res, trace=trace)
             # ... and pass the result to its endpoint, if it exists
             if self.endpoint is not None:
                 ep = self.manifest.get_endpoint(self.endpoint)
-                ep.run(res)
+                await ep.run(res, trace=trace)
+
+
+class TraceStep:
+    def __init__(self, node, data):
+        self.timestamp = datetime.datetime.now()
+        self.node = node
+        self.data = data
+        print(self.timestamp, node, data)
 
 # Trace a call through the compute graph.
 class Trace:
     def __init__(self, source):
-        self.source = source
         self.path = []
 
-    def trace(self, ):
-        pass
+    def trace(self, node, data):
+        self.path.append(TraceStep(node, data))
+
 
 class Manifest:
     def __init__(self):
@@ -162,6 +191,7 @@ class Manifest:
         self.actors = {}
         self.endpoints = {}
         self.daemons = {}
+        self.traces = {}
     
     def parse_file(self):
         with open("./batik.yaml") as manifest:
@@ -209,22 +239,20 @@ class Manifest:
     def add_actor(self, actor: Actor, name: str):
         self.actors[name] = actor
     
-    def get_actor(self, name: str):
+    def get_actor(self, name: str) -> Actor:
         return self.actors[name]
 
     def add_endpoint(self, endpoint: Endpoint, name: str):
         self.endpoints[name] = endpoint
 
-    def get_endpoint(self, name: str):
+    def get_endpoint(self, name: str) -> Endpoint:
         return self.endpoints[name]
     
     def add_daemon(self, daemon: Daemon, name: str):
         self.daemons[name] = daemon
 
-    def get_daemon(self, name: str):
+    def get_daemon(self, name: str) -> Daemon:
         return self.daemons[name]
-
-
 
 
     def spawn_daemons(self):
@@ -232,6 +260,13 @@ class Manifest:
             daemon_worker = Thread(target=self.daemon_thread, args=(daemon,))
             daemon_worker.setDaemon(True)
             daemon_worker.start()
+    
+
+    async def daemon_task(self, trace=False):
+        for daemon in self.daemons.keys():
+            asyncio.get_event_loop().create_task(
+                self.daemons[daemon].run(trace=trace)
+            )
     
 
     # Cast from a 'POST' body to the type specified in the manifest.
@@ -246,25 +281,28 @@ class Manifest:
         return payload
 
 
-    def run_layer_set(self, layers, payload: Any):
-        res = payload
-        for layer in layers:
-            if layer.pass_manifest:
-                res = layer.fn(res, batik_manifest=self)
-            else:
-                res = layer.fn(res)
-        return res
+    def create_trace(self) -> str:
+        key = secrets.token_urlsafe(10)
+        while key in self.traces:
+            key = secrets.token_urlsafe(10)
+        trace = Trace(key)
+        self.traces[key] = trace
+        return trace
 
-    
-    def run_endpoint(self, name: str, payload: Any, cast=False):
+    def get_trace(self, key: str) -> Trace:
+        return self.traces.get(key)
+
+
+    async def run_endpoint(self, name: str, payload: Any, cast=False, trace=None):
 
         ep = self.endpoints[name]
 
         payload = ep.cast(payload)
 
-        res = ep.run(payload)
+        res = await ep.run(payload, trace=trace)
 
         return res
+
     
     def broadcast(self, topic, data):
         print("Broadcast not implemented for current backend...")
