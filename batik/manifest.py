@@ -11,10 +11,10 @@ import json
 import re
 import sys
 from threading import Thread
+import concurrent
 
 
 def actor_by_path(name):
-    print(f"Actor by path {name}")
     module_name, class_name = name.split(".")
 
     if './' not in sys.path:
@@ -56,12 +56,14 @@ async def run_or_await(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
 class Layer:
-    def __init__(self, manifest, path, args):
+    def __init__(self, manifest, path, kwargs, next):
         self.path = path
         self.manifest = manifest
         self.pass_manifest = False
         self.actor = None
-        self.args = args 
+        self.kwargs = kwargs 
+        # Reference to the next layer in the linked-list
+        self.next = next 
 
         if path[0] == "$":
             # match $Actor.method , for example
@@ -77,38 +79,73 @@ class Layer:
             self.pass_manifest = True
 
     async def run(self, x, trace=None):
-        args = self.args or {}
+        kwargs = self.kwargs or {}
         # TODO: Pass the trace in here too!
         if self.pass_manifest:
-            res = await run_or_await(self.fn, x, **args, batik_manifest=self.manifest)
+            res = await run_or_await(self.fn, x, **kwargs, batik_manifest=self.manifest)
         else:
-            res = await run_or_await(self.fn, x, **args)
+            res = await run_or_await(self.fn, x, **kwargs)
         if trace:
             trace.trace(f'layer/{self.path}', res)
         return res
+    
+    async def run_downstream(self, x, trace=None):
+        res = await self.run(x, trace=trace)
+        if self.next:
+            return await self.next.run(res, trace=trace)
+        else:
+            return res
 
+
+# A layer that runs its downstream tasks concurrently, with 
+# an optional semaphore to limit the number of tasks running
+class ConcurrentLayer(Layer):
+    def __init__(self, manifest, path, kwargs, next, concurrency=None):
+        super().__init__(manifest, path, kwargs, next)
+        self.concurrency = concurrency
+        if concurrency:
+            self.sema = asyncio.BoundedSemaphore(concurrency)
+
+    async def run_downstream_sema(self, x, trace=None):
+        if self.sema:
+            async with self.sema:
+                return await self.next.run_downstream(x, trace=trace)
+        else:
+            return await self.next.run_downstream(x, trace=trace)
+
+    async def run_downstream(self, x, trace=None):
+        tasks = []
+
+        res = await self.run(x, trace=trace)
+        print("run_downstream", res)
+        if hasattr(res, "__aiter__"):
+            async for x in res:
+                task = asyncio.create_task(self.run_downstream_sema(x, trace=trace))
+                tasks.append(task)
+        else:
+            for x in res:
+                task = asyncio.create_task(self.run_downstream_sema(x, trace=trace))
+                tasks.append(task)
+        return await asyncio.gather(*tasks)
 
 class Actor:
-    # Actor's layer_args are contained within the underlying actor class
-    def __init__(self, class_path, args):
-        if args is None:
+    # Actor's kwargs are contained within the underlying actor class
+    def __init__(self, class_path, kwargs):
+        if kwargs is None:
             self.cl = actor_by_path(class_path)()
         else:
-            self.cl = actor_by_path(class_path)(**args)
+            self.cl = actor_by_path(class_path)(**kwargs)
 
 
 class Endpoint:
-    def __init__(self, name):
+    def __init__(self, name, layer):
         self.name = name
-        self.layers = []
-    
-    def add_layer(self, layer: Layer):
-        self.layers.append(layer)
+        self.layer = layer
 
     # Cast an input variable to the type annotated by
     # the first layer of the endpoint.
     def cast(self, x: Any):
-        fn = self.layers[0].fn
+        fn = self.layer.fn
         sig = inspect.signature(fn)
         params = list(sig.parameters.values())
         annotation = params[0].annotation
@@ -120,10 +157,9 @@ class Endpoint:
     async def run(self, x, trace=None):
         if trace:
             trace.trace(f'endpoint/{self.name}', x)
-        y = x
-        for layer in self.layers:
-            y = await layer.run(y, trace=trace)
-        return y
+
+        return await self.layer.run_downstream(x, trace=trace)
+
 
 class Daemon:
     def __init__(self, name, manifest, path, args, endpoint, steps):
@@ -211,15 +247,29 @@ class Manifest:
 
         for endpoint in mfst.get('endpoints') or []:
             name = endpoint['name']
-            input_type = endpoint.get("input_type") or 'str'
 
-            ep = Endpoint(name)
+            next_layer = None
+            for step in list(reversed(endpoint['steps'])):
+                # Janky, janky notation to signify a 
+                # [concurrent] generator function
+                if isinstance(step['name'], list):
+                    path  = step['name'][0]
+                    # Hey guy, why not just use step['concurrency'] ????
+                    if len(step['name']) > 1:
+                        concurrency = step['name'][1]
+                    else:
+                        concurrency = None
+                    args  = step.get('args')
+                    layer = ConcurrentLayer(self, path, args, next_layer, concurrency=concurrency)
+                    print(layer)
+                else:
+                    path  = step['name']
+                    args  = step.get('args')
+                    layer = Layer(self, path, args, next_layer)
+                    print(layer)
+                next_layer = layer
 
-            for step in endpoint['steps']:
-                path  = step['name']
-                args  = step.get('args')
-                layer = Layer(self, path, args)
-                ep.add_layer(layer)
+            ep = Endpoint(name, layer)
 
             self.add_endpoint(ep, name)
 
