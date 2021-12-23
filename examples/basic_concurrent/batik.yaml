@@ -1,0 +1,9 @@
+alias: basic_concurrent
+
+endpoints:
+  - name: primes_ten
+    steps:
+    - name: [ops.prime_factors, 10]
+    - name: ops.sleep
+    - name: [ops.yield_triplets, 10]
+    - name: ops.times_ten
