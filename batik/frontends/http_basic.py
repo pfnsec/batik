@@ -1,4 +1,5 @@
 
+import json
 from inspect import trace
 import aiohttp
 from aiohttp import web
@@ -7,12 +8,56 @@ import asyncio
 
 from batik import server
 
+def custom_dumps(obj):
+    return json.dumps(
+        obj,
+        default=str
+    )
+
 class HTTPServer(server.Server):
 
     def __init__(self, manifest):
         super().__init__(manifest)
         self.app = web.Application()
         self.add_routes()
+
+    async def websocket_handler(self, request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+
+        async for msg in ws:
+            print(msg.data)
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                data = msg.json()
+                cmd = data['cmd']
+                if cmd == 'invoke':
+                    trace = self.manifest.create_trace()
+                    task = asyncio.get_event_loop().create_task(
+                        self.manifest.run_endpoint(
+                            data['endpoint'], 
+                            data['payload'],
+                            cast=True,
+                            trace=trace
+                        )
+                    )
+
+                    while True:
+                        trace_step = await trace.queue.get()
+                        if trace_step == None: break
+                        await ws.send_json({
+                            'timestamp': trace_step.timestamp.isoformat(),
+                            'node': trace_step.node,
+                            'data': trace_step.data,
+                        }, dumps=custom_dumps)
+                        trace.queue.task_done()
+                    await asyncio.gather(task)
+                    await ws.send_str('goodbye')
+
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                print('ws connection closed with exception %s' %
+                    ws.exception())
+
+        return ws
 
     # Get all endpoints
     async def get_endpoints(self, request):
@@ -77,6 +122,7 @@ class HTTPServer(server.Server):
 
     def add_routes(self):
         self.app.add_routes([
+            web.get('/ws/', self.websocket_handler),
             web.get('/endpoint/', self.get_endpoints),
             web.get('/endpoint/{endpoint}', self.get_endpoint),
             web.post('/endpoint/{endpoint}/run', self.run_endpoint),
@@ -87,7 +133,7 @@ class HTTPServer(server.Server):
     async def run(self):
         runner = aiohttp.web.AppRunner(self.app)
         await runner.setup()
-        site = web.TCPSite(runner, 'localhost', 8080)
+        site = web.TCPSite(runner, 'localhost', 8086)
         await site.start()
         await self.manifest.daemon_task(trace=True)
         while True:
