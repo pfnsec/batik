@@ -5,7 +5,6 @@ Usage:
   batik serve [--backend <backend>] [--hot-reload]
   batik invoke <endpoint> [(--json <file> | <payload>)]
   batik run <endpoint> [(--json <file> | <payload>)] [--trace]
-  batik reload
   batik build [--push]
   batik validate
 
