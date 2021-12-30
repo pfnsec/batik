@@ -86,13 +86,13 @@ class Layer:
         else:
             res = await run_or_await(self.fn, x, **kwargs)
         if trace:
-            trace.trace(f'layer/{self.path}', res)
+            await trace.trace(f'layer/{self.path}', res)
         return res
     
     async def run_downstream(self, x, trace=None):
         res = await self.run(x, trace=trace)
         if self.next:
-            return await self.next.run(res, trace=trace)
+            return await self.next.run_downstream(res, trace=trace)
         else:
             return res
 
@@ -105,6 +105,8 @@ class ConcurrentLayer(Layer):
         self.concurrency = concurrency
         if concurrency:
             self.sema = asyncio.BoundedSemaphore(concurrency)
+        else:
+            self.sema = None
 
     async def run_downstream_sema(self, x, trace=None):
         if self.sema:
@@ -117,7 +119,6 @@ class ConcurrentLayer(Layer):
         tasks = []
 
         res = await self.run(x, trace=trace)
-        print("run_downstream", res)
         if hasattr(res, "__aiter__"):
             async for x in res:
                 task = asyncio.create_task(self.run_downstream_sema(x, trace=trace))
@@ -156,7 +157,7 @@ class Endpoint:
 
     async def run(self, x, trace=None):
         if trace:
-            trace.trace(f'endpoint/{self.name}', x)
+            await trace.trace(f'endpoint/{self.name}', x)
 
         return await self.layer.run_downstream(x, trace=trace)
 
@@ -193,7 +194,7 @@ class Daemon:
         async for res in await run_or_await(self.fn, **args):
             if(trace):
                 trace = self.manifest.create_trace()
-                trace.trace(f"daemon/{self.name}", res)
+                await trace.trace(f"daemon/{self.name}", res)
             else: 
                 trace = None
             # Run it through its layers...
@@ -210,15 +211,21 @@ class TraceStep:
         self.timestamp = datetime.datetime.now()
         self.node = node
         self.data = data
-        print(self.timestamp, node, data)
+        #print(self.timestamp, node, data)
 
 # Trace a call through the compute graph.
 class Trace:
     def __init__(self, source):
         self.path = []
+        self.queue = asyncio.Queue()
 
-    def trace(self, node, data):
-        self.path.append(TraceStep(node, data))
+    async def trace(self, node, data):
+        step = TraceStep(node, data)
+        self.path.append(step)
+        await self.queue.put(step)
+
+    async def finish(self):
+        await self.queue.put(None)
 
 
 class Manifest:
@@ -261,12 +268,10 @@ class Manifest:
                         concurrency = None
                     args  = step.get('args')
                     layer = ConcurrentLayer(self, path, args, next_layer, concurrency=concurrency)
-                    print(layer)
                 else:
                     path  = step['name']
                     args  = step.get('args')
                     layer = Layer(self, path, args, next_layer)
-                    print(layer)
                 next_layer = layer
 
             ep = Endpoint(name, layer)
@@ -350,6 +355,10 @@ class Manifest:
         payload = ep.cast(payload)
 
         res = await ep.run(payload, trace=trace)
+
+        if trace:
+            await trace.trace('result', res)
+            await trace.finish()
 
         return res
 
