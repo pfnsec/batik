@@ -58,8 +58,6 @@ setup(
         'watchdog',
         'docopt',
         "jinja2",
-        'docker',
-        'kubernetes',
     ],
     extras_require = {
         'test': ['coverage', 'pytest', 'pytest-cov'],
