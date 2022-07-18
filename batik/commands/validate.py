@@ -1,6 +1,5 @@
-
-from batik import manifest
 from .base import Base
+import batik
 
 
 class Validate(Base):
@@ -9,5 +8,5 @@ class Validate(Base):
         super().__init__(options, args, kwargs)
 
     def run(self):
-        mfst = manifest.Manifest()
+        mfst = batik.api.Manifest()
         mfst.parse_file()

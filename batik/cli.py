@@ -31,6 +31,13 @@ from docopt import docopt
 from . import __version__ as VERSION
 import batik.commands
 
+command_map = {
+  "serve": batik.commands.Serve,
+  "validate": batik.commands.Validate,
+  "invoke": batik.commands.Invoke,
+  "run-local": batik.commands.RunLocal,
+}
+
 def main():
     if sys.platform == 'win32':
         #loop = asyncio.ProactorEventLoop()
@@ -47,15 +54,9 @@ async def co_main():
     # with a pre-defined command class we've already created.
 
     for (k, v) in options.items(): 
-        if hasattr(batik.commands, k) and v:
-            module = getattr(batik.commands, k)
-
-            classes = getmembers(module, isclass)
-
-            #command = [command[1] for command in classes if command[0] != 'Base'][0]
-            # What a hack! Oh well
-            command = [command[1] for command in classes if str(command[0]).lower() == k][0]
-            command = command(options)
+        #if hasattr(batik.commands, k) and v:
+        if v:
+            command = command_map[k](options)
             if inspect.iscoroutinefunction(command.run):
                 await command.run()
             else:

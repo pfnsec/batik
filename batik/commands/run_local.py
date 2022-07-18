@@ -1,13 +1,13 @@
 import json
 from .base import Base
-from batik import manifest
+from batik.api import Manifest
 
 
-class Run(Base):
+class RunLocal(Base):
     """Load Manifest, run an endpoint, and quit"""
 
     async def run(self):
-        mfst = manifest.Manifest()
+        mfst = Manifest()
         mfst.parse_file()
 
         endpoint = self.options["<endpoint>"]

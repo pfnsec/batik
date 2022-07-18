@@ -2,7 +2,6 @@ import aiohttp
 import json
 from .base import Base
 
-
 class Invoke(Base):
     """Invoke endpoints"""
 
