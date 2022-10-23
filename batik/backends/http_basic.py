@@ -1,6 +1,5 @@
 
 import json
-from inspect import trace
 import aiohttp
 from aiohttp import web
 

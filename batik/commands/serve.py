@@ -14,5 +14,7 @@ class Serve(Base):
 
         if backend == "http":
             server = batik.backends.http_basic.HTTPServer(mfst)
+        elif backend == "agent":
+            server = batik.backends.reverse_agent.ReverseAgent(mfst)
         
         await server.run()
